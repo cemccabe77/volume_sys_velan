@@ -69,10 +69,10 @@ from PySide2.QtWidgets import *
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 
-from lib_python.mayaQT.scripts.dockableWidget import DockableWidget
-from lib_python.mayaQT.scripts.filtersWidget import SearchFiltersFrame
-from lib_python.mayaQT.scripts.collapsibleWidget import CollapsibleListWidget
-from lib_python.mayaQT.scripts import styles as styles
+from lib_python_velan.mayaQT.scripts.dockableWidget import DockableWidget
+from lib_python_velan.mayaQT.scripts.filtersWidget import SearchFiltersFrame
+from lib_python_velan.mayaQT.scripts.collapsibleWidget import CollapsibleListWidget
+from lib_python_velan.mayaQT.scripts import styles as styles
 
 
 if not cmds.pluginInfo('quatNodes', q=True, loaded=True):

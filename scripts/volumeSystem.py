@@ -1504,27 +1504,26 @@ class VolumeSystemUI(DockableWidget):
             guideName = cmds.getAttr(guide+'.guideName')
             axisDict = { 0:'X', 1:'Y', 2:'Z' }
             axis = axisDict[rotAxisComboBox.currentIndex()]
-            if not cmds.isConnected('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
-                                 'eulerConv_'+guideName+'_gdeRotConv.input'):
-                cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
-                                 'eulerConv_'+guideName+'_gdeRotConv.input', f=True)
 
-                # re constrain gdeA to new axis
-                if cmds.objExists('trkRot_'+guideName+'_gdeA.parentInverseMatrix'):
-                    if cmds.listConnections('trkRot_'+guideName+'_gdeA.parentInverseMatrix') != None:
-                        node = cmds.listConnections('trkRot_'+guideName+'_gdeA.parentInverseMatrix')[0]
-                        node = cmds.listConnections('trkRot_'+guideName+'_gdeA.parentInverseMatrix')[0]
-                        if cmds.nodeType(node) == 'multMatrix':
-                            decomp = cmds.listConnections(node+'.matrixSum')[0] # DecomposeMatrix node
-                            rotAxi = cmds.listConnections(decomp, p=True, c=True, t='transform') # Connection from decomp to gdeA
-                            cmds.disconnectAttr(rotAxi[0], rotAxi[1]) # Disconnect output axis, trkRot input axis
-                            cmds.setAttr(rotAxi[1], 0) # Zero out previously contrained axis of gdeA
-                            cmds.connectAttr(decomp+'.outputRotate'+axis, 'trkRot_'+guideName+'_gdeA.rotate'+axis) # New connection
-                            # Current Value ui connection
-                            cmds.connectAttr(f'twist_{guideName}_gdeExtract_twistExtractor_q2e.outputRotate.outputRotate{axis}',
-                                             f'Hbfr_{guideName}_SldGuideRoot.currentValRef', f=True)
-                        else:
-                            cmds.warning('Failed to fix parent constraint for tracker axis change')
+            # Constrain gdeA to new axis
+            if cmds.objExists('trkRot_'+guideName+'_gdeA.parentInverseMatrix'):
+                if cmds.listConnections('trkRot_'+guideName+'_gdeA.parentInverseMatrix') != None:
+                    node = cmds.listConnections('trkRot_'+guideName+'_gdeA.parentInverseMatrix')[0]
+                    node = cmds.listConnections('trkRot_'+guideName+'_gdeA.parentInverseMatrix')[0]
+                    if cmds.nodeType(node) == 'multMatrix':
+                        decomp = cmds.listConnections(node+'.matrixSum')[0] # DecomposeMatrix node
+                        rotAxi = cmds.listConnections(decomp, p=True, c=True, t='transform') # Connection from decomp to gdeA
+                        cmds.disconnectAttr(rotAxi[0], rotAxi[1]) # Disconnect output axis, trkRot input axis
+                        cmds.setAttr(rotAxi[1], 0) # Zero out previously contrained axis of gdeA
+                        cmds.connectAttr(decomp+'.outputRotate'+axis, 'trkRot_'+guideName+'_gdeA.rotate'+axis) # New connection
+                    else:
+                        cmds.warning('Failed to fix parent constraint for tracker axis change')
+
+            # Current Value ui connection
+            if not cmds.isConnected('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
+                                    'Hbfr_'+guideName+'_SldGuideRoot.currentValRef', iuc=True):
+                cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
+                                 'Hbfr_'+guideName+'_SldGuideRoot.currentValRef', f=True)
 
     def fixConstrainSldTracker(self, hbfrLst=None):
         '''

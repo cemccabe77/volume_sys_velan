@@ -1452,26 +1452,22 @@ class VolumeSystemUI(DockableWidget):
             for axis in ['tx','ty','tz','rx','ry','rz']:
                 cmds.setAttr('trkRot_'+guideName+'_gdeA'+'.'+axis, 0)
 
-            axisDict = { 0:'x', 1:'y', 2:'z' }
-            axis = cmds.getAttr(guide+'.XYZ')
-            if rotAxisComboBox is not None:
-                axis = axisDict[rotAxisComboBox.currentIndex()]
-            else:
-                axis = axisDict[axis]
-
             # get tracker parent
             try:
                 trkPar = cmds.listRelatives(sldTrk, p=1, shapes=False)[0]
             except TypeError:
                 raise TypeError('This tracker object does not have a parent. Must have a parent')
 
+            axisDict = { 0:'x', 1:'y', 2:'z' }
+            axis = axisDict[(cmds.getAttr(guide+'.XYZ'))]
+            
             self.parentConstraint(trkPar, 'angBet_'+guideName+'_gdeRoot', mo=True)
             self.parentConstraint(sldTrk, 'trkRot_'+guideName+'_gdeA', t=[], s=[], r=[axis], mo=True)
 
             # Fix twist extractor
-            if not cmds.isConnected('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis.upper(),
+            if not cmds.isConnected('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate.outputRotate'+axis.upper(),
                              'eulerConv_'+guideName+'_gdeRotConv.input'):
-                cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis.upper(),
+                cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate.outputRotate'+axis.upper(),
                                  'eulerConv_'+guideName+'_gdeRotConv.input', f=True)
 
     def delParCon(self, guide, parentLineEdit):
@@ -1524,6 +1520,9 @@ class VolumeSystemUI(DockableWidget):
                             cmds.disconnectAttr(rotAxi[0], rotAxi[1]) # Disconnect output axis, trkRot input axis
                             cmds.setAttr(rotAxi[1], 0) # Zero out previously contrained axis of gdeA
                             cmds.connectAttr(decomp+'.outputRotate'+axis, 'trkRot_'+guideName+'_gdeA.rotate'+axis) # New connection
+                            # Current Value ui connection
+                            cmds.connectAttr(f'twist_{guideName}_gdeExtract_twistExtractor_q2e.outputRotate.outputRotate{axis}',
+                                             f'Hbfr_{guideName}_SldGuideRoot.currentValRef', f=True)
                         else:
                             cmds.warning('Failed to fix parent constraint for tracker axis change')
 
@@ -2081,6 +2080,18 @@ class VolumeSystemUI(DockableWidget):
                         globalScl = item[1][0] # [attrVal, attrTyp]
                         newGde = self.createSliderGuide(guideName, globalScl)
                 #___________________________________
+                for item in items[:-2]:# Skip guide position attrs
+                    attr    = item[0]
+                    attrVal = item[1][0]
+                    attrTyp = item[1][1]
+                    if attrVal != None:
+                        if attrTyp == 'string':# Can only set Type, if type == string
+                            cmds.setAttr(attr, l=False)
+                            cmds.setAttr(attr, attrVal, type='string')
+                        else:
+                            cmds.setAttr(attr, l=False)
+                            cmds.setAttr(attr, attrVal)
+                #___________________________________
                 hbfr = items[0][0].split('.')[0]
                 for item in items:# Set guide tracker constraint
                     if '.guideTracker' in list(item)[0]:#get correct tuple (attr, [attrVal, attrTyp])
@@ -2095,22 +2106,11 @@ class VolumeSystemUI(DockableWidget):
                         axis = item[1][0] # [attrVal, attrTyp]
                         axisDict = {0:'X', 1:'Y', 2:'Z'}
                         try:
-                            cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
-                                             'eulerConv_'+guideName+'_gdeRotConv.input', f=True)
+                            a = axisDict.get(axis)
+                            cmds.connectAttr(f'twist_{guideName}_gdeExtract_twistExtractor_q2e.outputRotate.outputRotate{a}',
+                                             f'Hbfr_{guideName}_SldGuideRoot.currentValRef', f=True)
                         except:
                             pass
-                #___________________________________
-                for item in items[:-2]:# Skip guide position attrs
-                    attr    = item[0]
-                    attrVal = item[1][0]
-                    attrTyp = item[1][1]
-                    if attrVal != None:
-                        if attrTyp == 'string':# Can only set Type, if type == string
-                            cmds.setAttr(attr, l=False)
-                            cmds.setAttr(attr, attrVal, type='string')
-                        else:
-                            cmds.setAttr(attr, l=False)
-                            cmds.setAttr(attr, attrVal)
                 #___________________________________
                 for item in items[-2:]:# Guide position attrs
                     ctl     = item[0]

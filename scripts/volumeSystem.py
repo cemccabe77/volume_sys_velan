@@ -74,6 +74,11 @@ from lib_python_velan.mayaQT.scripts.filtersWidget import SearchFiltersFrame
 from lib_python_velan.mayaQT.scripts.collapsibleWidget import CollapsibleListWidget
 from lib_python_velan.mayaQT.scripts import styles as styles
 
+import lib_python_velan.mayaRigUtils.scripts.skincluster as skn
+# import lib_python_velan.mayaRigUtils.scripts.surfaces as srf
+# import lib_python_velan.mayaRigUtils.scripts.curves as crv
+# import lib_python_velan.mayaRigUtils.scripts.rigUtils as rigu
+
 
 if not cmds.pluginInfo('quatNodes', q=True, loaded=True):
     cmds.loadPlugin('quatNodes')
@@ -1023,7 +1028,7 @@ class VolumeSystemUI(DockableWidget):
 
         # Reset bindpose for skinCluster
         if jntSkn != []:
-            self.setBindPose(mesh=None, setAngle=0, sknCls=jntSkn)
+            self.set_bind_pose(mesh=None, setAngle=0, sknCls=jntSkn)
 
     def buildStretch(self, guide, strName, globScl=None, visCrv=0):
         # is def a joint? Is it in a skincluster?
@@ -1066,7 +1071,7 @@ class VolumeSystemUI(DockableWidget):
 
         # Reset bindpose for skinCluster
         if jntSkn != []:
-            self.setBindPose(mesh=None, setAngle=0, sknCls=jntSkn)
+            self.set_bind_pose(mesh=None, setAngle=0, sknCls=jntSkn)
 
     def createSliderSystem(self, sldName, startPos, endPos, sldPar, sldTrk, startAngle, endAngle, upAxis, globScl, visCrv, newDef, sldJnt):
         '''
@@ -1234,9 +1239,9 @@ class VolumeSystemUI(DockableWidget):
                 if cmds.objectType(k, isType=v):
                     cmds.delete(k)
         if cmds.objExists(strName+'_stretchStartPos'):
-            rigUtils.delParentConstraint(strName+'_stretchStartPos')
+            rigUtils.delete_parentConstraint(strName+'_stretchStartPos')
         if cmds.objExists(strName+'_stretchEndPos'):
-            rigUtils.delParentConstraint(strName+'_stretchEndPos')
+            rigUtils.delete_parentConstraint(strName+'_stretchEndPos')
 
 
         strRoot = cmds.createNode('transform', n='Orig_'+strName+'_StrRoot', ss=True)
@@ -1530,8 +1535,7 @@ class VolumeSystemUI(DockableWidget):
         Fix slider tracker constraints
         '''
         if hbfrLst == None:
-            if cmds.ls(sl=1):
-                hbfrLst=cmds.ls(sl=1)
+            hbfrLst = cmds.ls('Hbfr_*_*_SldGuideRoot')
 
         if hbfrLst != None:
             for hbfr in hbfrLst:
@@ -1683,7 +1687,7 @@ class VolumeSystemUI(DockableWidget):
     def duplicateSymSld(self, guideName):
         # Name guide
         guide = 'Hbfr_'+guideName+'_SldGuideRoot'
-        guideName = self.convertRLName(guideName)
+        guideName = self.convertRLName(guideName, side_format=1)
 
         # Delete if mirror guide exists
         if cmds.objExists('Hbfr_'+guideName+'_SldGuideRoot'):
@@ -1716,13 +1720,13 @@ class VolumeSystemUI(DockableWidget):
                 # guide = mirrGde[0] # To avoid warning from constrainSldTracker
                 self.constrainSldTracker(guide=mirrGde[0], sldTrk=guideTrk, mirror=True)
 
-            # Set tracker axis
-            axisDict = { 0:'X', 1:'Y', 2:'Z' }
-            axis = axisDict[cmds.getAttr(guide+'.XYZ')]
-            if not cmds.isConnected('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
-                                    'eulerConv_'+guideName+'_gdeRotConv.input'):
-                cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
-                                 'eulerConv_'+guideName+'_gdeRotConv.input', f=True)
+            # # Set tracker axis
+            # axisDict = { 0:'X', 1:'Y', 2:'Z' }
+            # axis = axisDict[cmds.getAttr(guide+'.XYZ')]
+            # if not cmds.isConnected('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
+            #                         'eulerConv_'+guideName+'_gdeRotConv.input'):
+            #     cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate'+axis,
+            #                      'eulerConv_'+guideName+'_gdeRotConv.input', f=True)
 
         # Mirror tracker values
         cmds.setAttr(mirrGde[0]+'.XYZ', cmds.getAttr(guide+'.XYZ'))
@@ -1740,9 +1744,11 @@ class VolumeSystemUI(DockableWidget):
 
         cmds.parent('Orig_'+guideName+'_SldGuideRoot', 'volumeGuides')
 
+        self.fixConstrainSldTracker()
+
     def duplicateSymStr(self, guideName):
         guide = 'Hbfr_'+guideName+'_StrGuideRoot'
-        guideName = self.convertRLName(guideName)
+        guideName = self.convertRLName(guideName, side_format=1)
 
         # Delete if mirror guide exists
         if cmds.objExists('Hbfr_'+guideName+'_StrGuideRoot'):
@@ -2177,21 +2183,25 @@ class VolumeSystemUI(DockableWidget):
 
         jntSkn = [] # Stores skinclusters that contain system joint
         if cmds.objExists(origObj):
-            sysDef = [i for i in cmds.listRelatives(origObj, ad=True) if i.endswith(suff)][0]
-            if cmds.nodeType(sysDef) == 'joint': # Check if joint or transform
-                if cmds.listConnections(sysDef+'.wm[0]') != None: # Check if joint is used in a skinCluster
-                    for con in cmds.listConnections(sysDef+'.wm[0]'):
-                        if cmds.objectType(con) == 'skinCluster':
-                            jntSkn.append(con)
-                            newDef = 0
-                        else:
-                            newDef = 1
+            # Join could have been used in a skin, but manually removed and deleted,
+            # but other system components could still exist
+            try:
+                sysDef = [i for i in cmds.listRelatives(origObj, ad=True) if i.endswith(suff)][0] # look for skin joint
+                if cmds.nodeType(sysDef) == 'joint': # Check if joint or transform
+                    if cmds.listConnections(sysDef+'.wm[0]') != None: # Check if joint is used in a skinCluster
+                        for con in cmds.listConnections(sysDef+'.wm[0]'):
+                            if cmds.objectType(con) == 'skinCluster':
+                                jntSkn.append(con)
+                                newDef = 0
+                            else:
+                                newDef = 1
+                    else:
+                        newDef = 1
                 else:
                     newDef = 1
-            else:
+            except:
                 newDef = 1
-        else:
-            newDef = 1
+
 
         # Get skinned meshes or surfaces from stored skinclusters in jntSkn
         if jntSkn != []:
@@ -2299,44 +2309,70 @@ class VolumeSystemUI(DockableWidget):
         else:
             for item in cmds.ls(sl=1):
                 if cmds.attributeQuery('guideType', node=item, ex=True):
-                    print('found guide')
-
                     if cmds.getAttr(item+'.guideType') == ('slider'):
-                        print('found slider')
                         cmds.delete(cmds.listRelatives('Hbfr_'+cmds.getAttr(item+'.guideName')+'_SldGuideRoot', p=True), hierarchy=True)
+                        continue
 
                     if cmds.getAttr(item+'.guideType') == ('stretch'):
-                        print('found stretch')
                         cmds.delete(cmds.listRelatives('Hbfr_'+cmds.getAttr(item+'.guideName')+'_StrGuideRoot', p=True), hierarchy=True)
+                        continue
+
+        self.refreshUI()
 
 
-    def convertRLName(self, name):
+    def convertRLName(self, name, side_format=0):
         '''
-        Convert a string with underscore
-
-        i.e: "_\L", "_L0\_", "L\_", "_L" to "R". And vice and versa.
-
-        :param string name: string to convert
-        :return: Tuple of Integer
+        Convert L to R and vise versa
+        
+        name (str) Strint to convert
+        side_format = (int) Pick l/r naming convention
         '''
-        if name == "L":
-            return "R"
-        elif name == "R":
-            return "L"
-        re_str = "_[RL][0-9]+_|^[RL][0-9]+_|_[RL][0-9]+$|_[RL]_|^[RL]_|_[RL]$"
-        rePattern = re.compile(re_str)
+        # if name == "L":
+        #     return "R"
+        # elif name == "R":
+        #     return "L"
 
-        reMatch = re.search(rePattern, name)
-        if reMatch:
-            instance = reMatch.group(0)
-            if instance.find("R") != -1:
-                rep = instance.replace("R", "L")
-            else:
-                rep = instance.replace("L", "R")
+        format_list = [
+        ['_l_', '_L_', '_r_', '_R_'],
+        ['l_', 'L_', 'r_', 'R_'],
+        ['_l', '_L', '_r', '_R'],
+        ]
 
-            name = re.sub(rePattern, rep, name)
 
-        return name
+        for side in format_list[side_format]:
+            if side in name:
+                letter = [char for char in side if char.isalpha()][0]
+                if letter.isupper():
+                    re_str = "_[RL][0-9]+_|^[RL][0-9]+_|_[RL][0-9]+$|_[RL]_|^[RL]_|_[RL]$"
+                    rePattern = re.compile(re_str)
+
+                    reMatch = re.search(rePattern, name)
+                    if reMatch:
+                        instance = reMatch.group(0)
+                        if instance.find("R") != -1:
+                            rep = instance.replace("R", "L")
+                        else:
+                            rep = instance.replace("L", "R")
+
+                        name = re.sub(rePattern, rep, name)
+                        return name
+
+                else:
+                    re_str = "_[rl][0-9]+_|^[rl][0-9]+_|_[rl][0-9]+$|_[rl]_|^[rl]_|_[rl]$"
+                    rePattern = re.compile(re_str)
+
+                    reMatch = re.search(rePattern, name)
+                    if reMatch:
+                        instance = reMatch.group(0)
+                        if instance.find("R") != -1:
+                            rep = instance.replace("r", "l")
+                        else:
+                            rep = instance.replace("l", "r")
+
+                        name = re.sub(rePattern, rep, name)
+                        return name
+
+        
 
     def extractTwist(self, root, tip, axis, name='', scaleSupport=False):
         # get the worldMatrix for root and tip, without the scale
@@ -2449,51 +2485,7 @@ class VolumeSystemUI(DockableWidget):
 
             return decomp
 
-    def getSkinClusterInfluenceIndex(self, skin_cluster, influence):
-        """Get the index of given influence.
-
-        Args:
-            skin_cluster (str): skinCluster node
-            influence (str): influence object
-
-        Return:
-            int: index
-        """
-        skin_cluster_obj = (
-            om2.MSelectionList().add(skin_cluster).getDependNode(0)
-        )
-        influence_dag = om2.MSelectionList().add(influence).getDagPath(0)
-        index = int(
-            OpenMayaAnim.MFnSkinCluster(
-                skin_cluster_obj
-            ).indexForInfluenceObject(influence_dag)
-        )
-
-        return index
-
-    def getSkinClusterInfluences(self, skin_cluster, full_path=False):
-        """Get skin_cluster influences.
-
-        Args:
-            skin_cluster (str): skinCluster node
-            full_path (bool): If true returns full path, otherwise partial path of
-                influence names.
-
-        Return:
-            list(str,): influences
-        """
-        name = "fullPathName" if full_path else "partialPathName"
-        skin_cluster_obj = (
-            om2.MSelectionList().add(skin_cluster).getDependNode(0)
-        )
-        inf_objs = OpenMayaAnim.MFnSkinCluster(
-            skin_cluster_obj
-        ).influenceObjects()
-        influences = [getattr(x, name)() for x in inf_objs]
-
-        return influences
-
-    def setBindPose(self, mesh=None, setAngle=0, sknCls=None):
+    def set_bind_pose(self, mesh=None, setAngle=0, sknCls=None):
         '''
         Resets bindpose on all joints connected to skincluster on selected mesh.
         And sets joints prefered angle.
@@ -2505,7 +2497,7 @@ class VolumeSystemUI(DockableWidget):
         '''
 
         if sknCls == None: #Get skinCls from mesh
-            sknCls = getSkinClusters(mesh)
+            sknCls = skn.get_skin_clusters(mesh_name=mesh)
             if not sknCls:
                 print('Cannot find skinCluster on obj >> ' + mesh)
 
@@ -2513,20 +2505,20 @@ class VolumeSystemUI(DockableWidget):
             sknCls = [sknCls]
 
         if len(sknCls) != 0:
-            for skn in sknCls:
-                sknJts = self.getSkinClusterInfluences(skn)
+            for skin in sknCls:
+                sknJts = skn.get_skin_cluster_influences(skin_cluster=skin)
 
                 # Delete bindPose
-                if cmds.listConnections(skn+'.bindPose'):
-                    cmds.delete(cmds.listConnections(skn+'.bindPose'))
+                if cmds.listConnections(skin+'.bindPose'):
+                    cmds.delete(cmds.listConnections(skin+'.bindPose'))
 
                 # Connect pre bind matrix
                 for jnt in sknJts:
-                    jntIdx = self.getSkinClusterInfluenceIndex(skn, jnt)
+                    jntIdx = skn.get_skin_cluster_influence_index(skin_cluster=skin, influence=jnt)
                     if setAngle > 0:
                         cmds.joint(jnt, e=1, spa=1) # Set preferred angle
                     pos = cmds.getAttr(jnt+'.wim')
-                    cmds.setAttr(skn+'.bindPreMatrix[{}]'.format(jntIdx), pos, type='matrix')
+                    cmds.setAttr(skin+'.bindPreMatrix[{}]'.format(jntIdx), pos, type='matrix')
    # Not in use. on rename, hbfr (line 2350) does not exist
     def renameGuide(self, guide, guideNameLineEdit):
         '''

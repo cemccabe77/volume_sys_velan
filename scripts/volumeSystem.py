@@ -1,14 +1,4 @@
 '''
-"This project is licensed under the MIT License. 
-This means you are free to use, modify, distribute, 
-and sublicense the code with minimal restrictions. 
-The software is provided 'as is,' without warranty of any kind, 
-express or implied, including but not limited to warranties of merchantability, 
-fitness for a particular purpose, and non-infringement. 
-For more details, please refer to the full license text included in this repository."
-
-
-
 DESCRIPTION:
     Maya dockable window
 USAGE:
@@ -36,17 +26,16 @@ USAGE:
     cmds.workspaceControl(ctrl, edit=True, restore=True)
     cmds.workspaceControl(ctrl, edit=True, visible=False)
     cmds.workspaceControl(ctrl, edit=True, visible=True)
+
+    ##TODO##
+    filterType for 'L', 'R', 'M'
+    undoChunk()
+    buildGuidesUI: use filterGuideList
+    filter by selected - selected guides option is locking up maya (filterGuideList: selectionChangedEvent)
+    vpStrSelect
+    VolumeSystemUI_guideDialog: - use callbacks for button enabling
+
 '''
-
-####TODO##
-# showCurves()
-# filterType for 'L', 'R', 'M'
-# undoChunk()
-# buildGuidesUI: use filterGuideList
-# filter by selected - selected guides option is locking up maya (filterGuideList: selectionChangedEvent)
-# vpStrSelect
-# VolumeSystemUI_guideDialog: - use callbacks for button enabling
-
 
 import sys
 version = sys.version
@@ -55,7 +44,6 @@ pythonVersion = version_info.major
 print('pythonVersion: %s' % pythonVersion)
 
 from functools import partial
-from collections import OrderedDict
 import json
 import re, os, time
 
@@ -95,14 +83,14 @@ class VolumeSystemUI(DockableWidget):
 
     def __init__(self, parent=None, **kwargs):
         if self.registry.getInstance(VolumeSystemUI) is not None:
-            print('\nREGISTRY WARNING:')
+            print('\nREGISTRY INFO:')
             print('Cannot create multiple UI instances for any single type.\n'
                   'Therefore the old instance will be replaced in the registry.\n')
         super(VolumeSystemUI, self).__init__(parent=parent)
 
         # setting the minimum size
-        width = 400
-        height = 333
+        width = 700
+        height = 400
         self.setMinimumSize(width, height)
 
         self.guides = None
@@ -116,10 +104,9 @@ class VolumeSystemUI(DockableWidget):
         self.guideCollapsibleListWidget = {}
         self.guideCollapsibleListWidgetMenu = {}
 
-        # legacy start
         self.sliderParDict    = None
         self.stretchParDict   = None
-        self.gdeBackupDict    = OrderedDict()
+        self.gdeBackupDict    = {}
         self.selSystemGlob    = None
         self.selSystemGlobSld = None
         self.selSystemGlobStr = None
@@ -127,10 +114,12 @@ class VolumeSystemUI(DockableWidget):
         self.selGdeGlobStr    = None
         self.enableCommitSld  = False
         self.enableCommitStr  = False
-        # legacy end
 
         self.buildUI()
         self.initCallbacks()
+
+
+
 
 
     # UI
@@ -211,7 +200,11 @@ class VolumeSystemUI(DockableWidget):
         self.guideCollapsibleListWidgetMenu.setTearOffEnabled(True)
 
         self.createGuideCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Create Guide', lambda:self.guideCollapsibleListWidgetMenuCallBack(dialogMode='create'))
+        
+        self.guideCollapsibleListWidgetMenu.addSeparator()
 
+        self.buildFromGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Build from Guide(s)', lambda:self.buildFromGuide())
+        
         self.guideCollapsibleListWidgetMenu.addSeparator()
 
         self.expandAllCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Expand All', lambda:self.guideCollapsibleListWidgetExpandCollapseCallBack(setCollapsed=False))
@@ -227,19 +220,7 @@ class VolumeSystemUI(DockableWidget):
 
         self.guideCollapsibleListWidgetMenu.addSeparator()
 
-        self.toggleSystemeVisCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Toggle System Vis', lambda:self.showSystems())
-
-        self.guideCollapsibleListWidgetMenu.addSeparator()
-
         self.mirrorGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Mirror Guide(s)', lambda:self.mirrorGuideMultiple())
-
-        self.guideCollapsibleListWidgetMenu.addSeparator()
-
-        self.buildFromGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Build from Guide(s)', lambda:self.buildFromGuide())
-
-        self.guideCollapsibleListWidgetMenu.addSeparator()
-
-        self.deleteSelectedGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Delete Selected Guide(s)', lambda:self.deleteMultiple())
 
         self.guideCollapsibleListWidgetMenu.addSeparator()
 
@@ -253,14 +234,20 @@ class VolumeSystemUI(DockableWidget):
 
         self.guideCollapsibleListWidgetMenu.addSeparator()
 
-        self.fixTrackersCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Fix Tracker(s)', lambda:self.fixConstrainSldTracker())
+        # self.fixTrackersCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Fix Tracker(s)', lambda:self.fixConstrainSldTracker())
 
         self.guideCollapsibleListWidgetMenu.addSeparator()
 
-        # globalScale
-
         self.saveSelectedGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Save Guides', lambda:self.backupGuideDecide())
         self.loadGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Load Guides', lambda:self.restoreGuides())
+
+        self.guideCollapsibleListWidgetMenu.addSeparator()
+
+        self.deleteSelectedGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Delete Selected Guide(s)', lambda:self.deleteMultiple())
+
+        self.guideCollapsibleListWidgetMenu.addSeparator()
+
+        self.deleteSelectedGuidesCollapsibleListWidgetMenuItem = self.guideCollapsibleListWidgetMenu.addAction('Refresh UI', lambda:self.refreshUI())
 
         self.guideCollapsibleListWidget.customContextMenuRequested.connect(partial(self.guideCollapsibleListWidgetContextMenuCallBack))
 
@@ -383,8 +370,9 @@ class VolumeSystemUI(DockableWidget):
 
             guideName = cmds.getAttr(guide + '.guideName')
             guideNameLineEdit = QLineEdit(guideName)
+            guideNameLineEdit.setReadOnly(True)
             sliderHBoxLayout.addWidget(guideNameLineEdit)
-            guideNameLineEdit.editingFinished.connect(lambda:self.renameGuide(guide, guideNameLineEdit))
+            # guideNameLineEdit.editingFinished.connect(lambda:self.renameGuide(guide, guideNameLineEdit))
 
             sliderHBoxLayout.addItem(QSpacerItem(10, 0, QSizePolicy.Minimum, QSizePolicy.Minimum))
 
@@ -395,11 +383,11 @@ class VolumeSystemUI(DockableWidget):
             parentLineEdit = QLineEdit(parent)
             parentLineEdit.setReadOnly(True)
             parentPushButton.clicked.connect(lambda:self.constrainSldParent(guide, parentLineEdit))
-
             sliderHBoxLayout.addWidget(parentLineEdit)
-            deleteParentButton = QPushButton('X')
-            sliderHBoxLayout.addWidget(deleteParentButton)
-            deleteParentButton.clicked.connect(lambda:self.delParCon(guide, parentLineEdit))
+
+            # deleteParentButton = QPushButton('X')
+            # sliderHBoxLayout.addWidget(deleteParentButton)
+            # deleteParentButton.clicked.connect(lambda:self.delParCon(guide, parentLineEdit))
 
             sliderHBoxLayout.addItem(QSpacerItem(10, 0, QSizePolicy.Minimum, QSizePolicy.Minimum))
 
@@ -411,9 +399,9 @@ class VolumeSystemUI(DockableWidget):
             trackerLineEdit.setReadOnly(True)
             sliderHBoxLayout.addWidget(trackerLineEdit)
 
-            deleteTrackerButton = QPushButton('X')
-            sliderHBoxLayout.addWidget(deleteTrackerButton)
-            deleteTrackerButton.clicked.connect(lambda:self.delTrkCon(guide, trackerLineEdit))
+            # deleteTrackerButton = QPushButton('X')
+            # sliderHBoxLayout.addWidget(deleteTrackerButton)
+            # deleteTrackerButton.clicked.connect(lambda:self.delTrkCon(guide, trackerLineEdit))
 
             sliderSettingsHBoxLayout = QHBoxLayout()
             frame.layout().addLayout(sliderSettingsHBoxLayout)
@@ -488,17 +476,17 @@ class VolumeSystemUI(DockableWidget):
             jntCheckBox.setChecked(jntCheckBoxState)
             sliderSettingsHBoxLayout.addWidget(jntCheckBox)
 
-            doritoCheckBoxState = cmds.getAttr('%s.sliderDorito' % (guide))
-            doritoCheckBox = QCheckBox('dor')
-            doritoCheckBox.setChecked(doritoCheckBoxState)
-            sliderSettingsHBoxLayout.addWidget(doritoCheckBox)
+            # doritoCheckBoxState = cmds.getAttr('%s.sliderDorito' % (guide))
+            # doritoCheckBox = QCheckBox('dor')
+            # doritoCheckBox.setChecked(doritoCheckBoxState)
+            # sliderSettingsHBoxLayout.addWidget(doritoCheckBox)
 
-            rotAxisComboBox.activated[int].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
-            startValDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
-            endValDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
-            reverseCheckBox.clicked[bool].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
-            jntCheckBox.clicked[bool].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
-            doritoCheckBox.clicked[bool].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
+            rotAxisComboBox.activated[int].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, ))
+            startValDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, ))
+            endValDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, ))
+            reverseCheckBox.clicked[bool].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, ))
+            jntCheckBox.clicked[bool].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, ))
+            # doritoCheckBox.clicked[bool].connect(lambda:self.commitGdeSld(guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox))
 
         if guideType == 'stretch':
             stretchHBoxLayout = QHBoxLayout()
@@ -508,8 +496,9 @@ class VolumeSystemUI(DockableWidget):
 
             guideName = cmds.getAttr(guide + '.guideName')
             guideNameLineEdit = QLineEdit(guideName)
+            guideNameLineEdit.setReadOnly(True)
             stretchHBoxLayout.addWidget(guideNameLineEdit)
-            guideNameLineEdit.editingFinished.connect(lambda:self.renameGuide(guide, guideNameLineEdit))
+            # guideNameLineEdit.editingFinished.connect(lambda:self.renameGuide(guide, guideNameLineEdit))
 
             stretchHBoxLayout.addItem(QSpacerItem(10, 0, QSizePolicy.Minimum, QSizePolicy.Minimum))
 
@@ -520,11 +509,11 @@ class VolumeSystemUI(DockableWidget):
             startParentLineEdit = QLineEdit(startParent)
             startParentLineEdit.setReadOnly(True)
             startParentPushButton.clicked.connect(lambda:self.constrainStrStart(guide, startParentLineEdit))
-
             stretchHBoxLayout.addWidget(startParentLineEdit)
-            deleteStartParentButton = QPushButton('X')
-            stretchHBoxLayout.addWidget(deleteStartParentButton)
-            deleteStartParentButton.clicked.connect(lambda:self.delStartCon(guide, startParentLineEdit))
+
+            # deleteStartParentButton = QPushButton('X')
+            # stretchHBoxLayout.addWidget(deleteStartParentButton)
+            # deleteStartParentButton.clicked.connect(lambda:self.delStartCon(guide, startParentLineEdit))
 
             stretchHBoxLayout.addItem(QSpacerItem(10, 0, QSizePolicy.Minimum, QSizePolicy.Minimum))
 
@@ -537,9 +526,9 @@ class VolumeSystemUI(DockableWidget):
             endParentPushButton.clicked.connect(lambda:self.constrainStrEnd(guide, endParentLineEdit))
             stretchHBoxLayout.addWidget(endParentLineEdit)
 
-            deleteEndParentButton = QPushButton('X')
-            stretchHBoxLayout.addWidget(deleteEndParentButton)
-            deleteEndParentButton.clicked.connect(lambda:self.delEndCon(guide, endParentLineEdit))
+            # deleteEndParentButton = QPushButton('X')
+            # stretchHBoxLayout.addWidget(deleteEndParentButton)
+            # deleteEndParentButton.clicked.connect(lambda:self.delEndCon(guide, endParentLineEdit))
 
             stretchSettingsHBoxLayout = QHBoxLayout()
             frame.layout().addLayout(stretchSettingsHBoxLayout)
@@ -580,7 +569,7 @@ class VolumeSystemUI(DockableWidget):
             enableSnsHBoxLayout.addLayout(multiplierHBoxLayout)
 
             snsMultiplier = cmds.getAttr('%s.snsMultiplier' % (guide))
-            multiplierQLabel = QLabel('Multiplier')
+            multiplierQLabel = QLabel('SNS Mult')
             multiplierQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
             multiplierHBoxLayout.addWidget(multiplierQLabel)
             multiplierDoubleSpinBox = QDoubleSpinBox()
@@ -602,17 +591,17 @@ class VolumeSystemUI(DockableWidget):
             jntCheckBox.setChecked(jntCheckBoxState)
             miscHBoxLayout.addWidget(jntCheckBox)
 
-            doritoCheckBoxState = cmds.getAttr('%s.stretchDorito' % (guide))
-            doritoCheckBox = QCheckBox('dor')
-            doritoCheckBox.setChecked(doritoCheckBoxState)
-            miscHBoxLayout.addWidget(doritoCheckBox)
+            # doritoCheckBoxState = cmds.getAttr('%s.stretchDorito' % (guide))
+            # doritoCheckBox = QCheckBox('dor')
+            # doritoCheckBox.setChecked(doritoCheckBoxState)
+            # miscHBoxLayout.addWidget(doritoCheckBox)
 
-            twistCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
-            strDefPosDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
-            enableSnsCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
-            multiplierDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
-            jntCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
-            doritoCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
+            twistCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, ))
+            strDefPosDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, ))
+            enableSnsCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, ))
+            multiplierDoubleSpinBox.valueChanged.connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, ))
+            jntCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, ))
+            # doritoCheckBox.clicked[bool].connect(lambda:self.commitGdeStr(guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox))
 
         return frame
 
@@ -698,9 +687,6 @@ class VolumeSystemUI(DockableWidget):
         '''
         '''
         self.refreshUI()
-
-
-    # legacy start
 
 
     # Create Guides / Systems
@@ -1474,20 +1460,16 @@ class VolumeSystemUI(DockableWidget):
                              'eulerConv_'+guideName+'_gdeRotConv.input'):
                 cmds.connectAttr('twist_'+guideName+'_gdeExtract_twistExtractor_q2e.outputRotate.outputRotate'+axis.upper(),
                                  'eulerConv_'+guideName+'_gdeRotConv.input', f=True)
-
+    '''
     def delParCon(self, guide, parentLineEdit):
-        '''
-        '''
         cmds.setAttr(guide+'.guideParent', '', type='string')
         parentLineEdit.setText('')
 
     def delTrkCon(self, guide, trackerLineEdit):
-        '''
-        '''
         cmds.setAttr(guide+'.guideTracker', '', type='string')
         trackerLineEdit.setText('')
-
-    def commitGdeSld(self, guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox):
+    '''
+    def commitGdeSld(self, guide, rotAxisComboBox, startValDoubleSpinBox, endValDoubleSpinBox, reverseCheckBox, jntCheckBox, doritoCheckBox=None):
         '''
         '''
         if guide:
@@ -1502,8 +1484,8 @@ class VolumeSystemUI(DockableWidget):
             cmds.setAttr(guide+'.trackerRev', reverseCheckBox.isChecked())
             # set joint option
             cmds.setAttr(guide+'.sliderJoint', jntCheckBox.isChecked())
-            # set joint dorito option
-            cmds.setAttr(guide+'.sliderDorito', doritoCheckBox.isChecked())
+            # # set joint dorito option
+            # cmds.setAttr(guide+'.sliderDorito', doritoCheckBox.isChecked())
 
             # Axis value change
             guideName = cmds.getAttr(guide+'.guideName')
@@ -1574,7 +1556,7 @@ class VolumeSystemUI(DockableWidget):
         cmds.setAttr(guide+'.endParent', '', type='string')
         endParentLineEdit.setText('')
 
-    def commitGdeStr(self, guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox):
+    def commitGdeStr(self, guide, twistCheckBox, strDefPosDoubleSpinBox, enableSnsCheckBox, multiplierDoubleSpinBox, jntCheckBox, doritoCheckBox=None):
         '''
         '''
         if guide:
@@ -1589,29 +1571,11 @@ class VolumeSystemUI(DockableWidget):
             cmds.setAttr(guide+'.snsMultiplier', multiplierDoubleSpinBox.value())
             # set joint option
             cmds.setAttr(guide+'.stretchJoint', jntCheckBox.isChecked())
-            # set joint dorito option
-            cmds.setAttr(guide+'.stretchDorito', doritoCheckBox.isChecked())
+            # # set joint dorito option
+            # cmds.setAttr(guide+'.stretchDorito', doritoCheckBox.isChecked())
 
 
     # Show / Hide
-    def showCurves(self):
-        pass
-        '''self.hideGuides()
-        countListTrue = []
-        countListFalse = []
-        showSystemList = cmds.ls("Orig*SldRoot", "Orig*StrRoot")
-        # determine if guides are visible or not
-        for x in showSystemList:
-            if cmds.getAttr(x+'.visibility') == True:
-                countListTrue.append(x)
-            else:
-                countListFalse.append(x)
-        # show or hide based on current visibliity
-        if len(countListTrue) > len(countListFalse):
-            [cmds.setAttr(x+".visibility", False) for x in showSystemList]
-        else:
-            [cmds.setAttr(x+".visibility", True) for x in showSystemList]'''
-
     def showGuides(self):
         self.hideSystems()
         countListTrue = []
@@ -1943,7 +1907,7 @@ class VolumeSystemUI(DockableWidget):
     # Load / Save Gides
     def backupGuideDecide(self):
         # New guide backup
-        self.gdeBackupDict = OrderedDict()
+        self.gdeBackupDict = {}
         slider = cmds.ls('Hbfr_*_SldGuideRoot')
         stretch = cmds.ls('Hbfr_*_StrGuideRoot')
         cmds.select(slider, stretch)
@@ -1967,7 +1931,7 @@ class VolumeSystemUI(DockableWidget):
         dirName = os.path.dirname(__file__)
         startingDirectory = os.path.join(dirName, '../elements/template/biped')
         fileType = '*.json'
-        savePath = cmds.fileDialog2(startingDirectory=startingDirectory, fm=0, okc="Save", fileFilter=fileType)
+        savePath = cmds.fileDialog2(fm=0, okc="Save", fileFilter=fileType)
 
         with open(savePath[0], 'w') as f:
             data = self.gdeBackupDict
@@ -1983,7 +1947,7 @@ class VolumeSystemUI(DockableWidget):
         # guideStartMatrix = [item for items in self.getTransform(guideStart) for item in items] #Flattens matrix to an array
         # guideEndMatrix = [item for items in self.getTransform(guideEnd) for item in items] #Flattens matrix to an array
 
-        gdeAttrDict = OrderedDict() # Get guide attrs
+        gdeAttrDict = {} # Get guide attrs
         gdeAttrDict[guide+'.guideType'] = [cmds.getAttr(guide+'.guideType') , cmds.getAttr(guide+'.guideName', type=True)]
         gdeAttrDict[guide+'.guideName'] = [cmds.getAttr(guide+'.guideName') , cmds.getAttr(guide+'.guideName', type=True)]
         gdeAttrDict[guide+'.globalScale'] = [cmds.getAttr(guide+'.globalScale') , cmds.getAttr(guide+'.globalScale', type=True)]
@@ -2016,7 +1980,7 @@ class VolumeSystemUI(DockableWidget):
         # guideStartMatrix = [item for items in self.getTransform(guideStart) for item in items] #Flattens matrix to an array
         # guideEndMatrix = [item for items in self.getTransform(guideEnd) for item in items] #Flattens matrix to an array
 
-        gdeAttrDict = OrderedDict() # Get guide attrs
+        gdeAttrDict = {} # Get guide attrs
         gdeAttrDict[guide+'.guideType'] = [cmds.getAttr(guide+'.guideType') , cmds.getAttr(guide+'.guideName', type=True)]
         gdeAttrDict[guide+'.guideName'] = [cmds.getAttr(guide+'.guideName') , cmds.getAttr(guide+'.guideName', type=True)]
         gdeAttrDict[guide+'.globalScale'] = [cmds.getAttr(guide+'.globalScale') , cmds.getAttr(guide+'.globalScale', type=True)]
@@ -2058,15 +2022,15 @@ class VolumeSystemUI(DockableWidget):
         '''
 
         # Load fromFile arg
-        gdeBackupDict = OrderedDict()
+        gdeBackupDict = {}
         if fromFile:# From postbuild script
-            gdeBackupDict = json.load(open(fromFile), object_pairs_hook=OrderedDict)
+            gdeBackupDict = json.load(open(fromFile))
         else:# From UI
             dirName = os.path.dirname(__file__)
             startingDirectory = os.path.join(dirName, '../elements/template/biped')
             fileType = '*.json'
-            loadPath = cmds.fileDialog2(startingDirectory=startingDirectory, fm = 1, okc = "Load", fileFilter = fileType)
-            gdeBackupDict = json.load(open(loadPath[0]), object_pairs_hook=OrderedDict)
+            loadPath = cmds.fileDialog2(fm=1, okc="Load", fileFilter=fileType)
+            gdeBackupDict = json.load(open(loadPath[0]))
 
 
         # Load guides
@@ -2519,10 +2483,8 @@ class VolumeSystemUI(DockableWidget):
                         cmds.joint(jnt, e=1, spa=1) # Set preferred angle
                     pos = cmds.getAttr(jnt+'.wim')
                     cmds.setAttr(skin+'.bindPreMatrix[{}]'.format(jntIdx), pos, type='matrix')
-   # Not in use. on rename, hbfr (line 2350) does not exist
+    '''    
     def renameGuide(self, guide, guideNameLineEdit):
-        '''
-        '''
         newName = guideNameLineEdit.text()
         if newName == '':
             raise TypeError('Enter a Name')
@@ -2562,7 +2524,7 @@ class VolumeSystemUI(DockableWidget):
                 raise NameError('Current selection is not a guide Hbfr')
         else:
             raise NameError('Current selection is not a guide Hbfr')
-
+    '''
     def guide_from_joint():
         '''
         Select a joint created by the volume system
@@ -2577,21 +2539,23 @@ class VolumeSystemUI(DockableWidget):
         cmds.select(replace_StrMain)
 
 
-    # legacy end
 
 
-
-# VolumeSystemUI_guideDialog: - use callbacks for button enabling
-class VolumeSystemUI_guideDialog(QWidget):
+from PySide2 import QtWidgets
+class VolumeSystemUI_guideDialog(DockableWidget, QWidget):
     '''
+    Creates UI for 'Create Guide'
+    
+    VolumeSystemUI_guideDialog: - use callbacks for button enabling
     '''
     def __init__(self, mainWidget, dialogMode='create', parent=None):
+        
         # call QWidget's __init__ method
-        super(VolumeSystemUI_guideDialog, self).__init__(parent)
+        super(VolumeSystemUI_guideDialog, self).__init__(parent=parent)
 
         # setting the minimum size
-        width = 300
-        height = 120
+        width = 400
+        height = 170
         self.setFixedSize(width, height)
 
         # set the window title
@@ -2613,8 +2577,8 @@ class VolumeSystemUI_guideDialog(QWidget):
         self.globalScaleSpinBox.setValue(1.0)
         self.topHLayout.addWidget(self.globalScaleSpinBox)
 
-        self.systemsCurveVis = QCheckBox('Systems Curve Vis')
-        self.topHLayout.addWidget(self.systemsCurveVis)
+        # self.systemsCurveVis = QCheckBox('Systems Curve Vis')
+        # self.topHLayout.addWidget(self.systemsCurveVis)
 
         self.topHLayout.addItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
@@ -2643,10 +2607,9 @@ class VolumeSystemUI_guideDialog(QWidget):
         self.createGuidePushButton = QPushButton('Create Guide')
         self.createGuidePushButton.setStyleSheet(styles.color_button_enabled)
         self.bottomHLayout.addWidget(self.createGuidePushButton)
-        self.createGuidePushButton.clicked.connect(self.cmImportGuide)
+        self.createGuidePushButton.clicked.connect(self.createGuide)
 
-    # legacy start
-    def cmImportGuide(self):
+    def createGuide(self):
         '''
         '''
         sysSide = self.sideComboBox.currentText()
@@ -2671,7 +2634,7 @@ class VolumeSystemUI_guideDialog(QWidget):
         if cmds.ls(sl=True):
             objTyp = cmds.objectType(cmds.ls(sl=True)[0])
             if (objTyp == 'transform') or (objTyp == 'joint'):
-                qckMatrix = self.getTransform(cmds.ls(sl=True)[0])
+                qckMatrix = self.mainWidget.getTransform(cmds.ls(sl=True)[0])
 
         # Check if guide already exists
         prefixDict = { 1:'_Sld', 2:'_Str' }
@@ -2693,34 +2656,9 @@ class VolumeSystemUI_guideDialog(QWidget):
         # Move guide to selected obj if something is selected
         if qckMatrix != None:
             target = 'Hbfr_'+guideName+gdePrefix+'GuideRoot'
-            self.setTransformFromMatrix(qckMatrix, target)
+            self.mainWidget.setTransformFromMatrix(qckMatrix, target)
 
         cmds.select('Hbfr_'+guideName+gdePrefix+'GuideRoot')
 
         self.close()
         self.mainWidget.refreshUI()
-
-    def getTransform(self, node):
-        """Return the transformation matrix of the dagNode in worldSpace.
-
-        Arguments:
-            node (dagNode): The dagNode to get the translation
-
-        Returns:
-            matrix: The transformation matrix
-        """
-        return cmds.xform(node, q=True, ws=True, m=True)
-
-    def setTransformFromMatrix(self, matrix, target):
-        """sets dagNode transformations in world space.
-
-        Arguments:
-            matrix (MMatrix): The source matrix
-            target (dagNode): The target dagNode
-
-        Returns:
-            None
-
-        """
-        cmds.xform(target, ws=True, m=matrix)
-    # legacy end

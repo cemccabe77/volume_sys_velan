@@ -1681,7 +1681,6 @@ class VolumeSystemUI(DockableWidget):
             guideTrk = self.convertRLName(cmds.getAttr(guide+'.guideTracker'))
             cmds.setAttr(mirrGde[0]+'.guideTracker', guideTrk, type='string')
             if cmds.objExists(guideTrk):
-                # guide = mirrGde[0] # To avoid warning from constrainSldTracker
                 self.constrainSldTracker(guide=mirrGde[0], sldTrk=guideTrk, mirror=True)
 
             # # Set tracker axis
@@ -1708,7 +1707,6 @@ class VolumeSystemUI(DockableWidget):
 
         cmds.parent('Orig_'+guideName+'_SldGuideRoot', 'volumeGuides')
 
-        self.fixConstrainSldTracker()
 
     def duplicateSymStr(self, guideName):
         guide = 'Hbfr_'+guideName+'_StrGuideRoot'
@@ -2301,6 +2299,11 @@ class VolumeSystemUI(DockableWidget):
         ['l_', 'L_', 'r_', 'R_'],
         ['_l', '_L', '_r', '_R'],
         ]
+
+
+        # Test to see if name contains l/r.
+        if [s for s in format_list[side_format] if s in name] == []:
+            return name
 
 
         for side in format_list[side_format]:
